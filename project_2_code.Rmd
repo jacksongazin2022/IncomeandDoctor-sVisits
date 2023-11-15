@@ -1,0 +1,330 @@
+---
+title: "Project_2_code"
+author: "Jackson Gazin"
+date: "2023-11-14"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(AER)
+data("DoctorVisits", package = "AER")
+library(ggplot2)
+library(dplyr)
+```
+
+## Data Cleaning 
+```{r}
+str(DoctorVisits)
+
+## Update Age so it is not a decimal
+
+DoctorVisits$age <- DoctorVisits$age*100
+DoctorVisits$income <- DoctorVisits$income*100
+
+calculate_percentage_counts <- function(data, column_name) {
+  # Check if the column exists in the data
+  if (!(column_name %in% colnames(data))) {
+    stop("Column not found in the dataset.")
+  }
+  
+  # Calculate counts for each level
+  counts <- table(data[[column_name]])
+  
+  # Calculate percentages
+  percentages <- prop.table(counts) * 100
+  
+  # Combine counts and percentages into a data frame
+  result <- data.frame(Level = names(counts), Count = as.numeric(counts), Percentage = percentages)
+  
+  return(result)
+}
+
+calculate_percentage_counts(DoctorVisits, "age")
+calculate_percentage_counts(DoctorVisits, "gender")
+calculate_percentage_counts(DoctorVisits, "health")
+calculate_percentage_counts(DoctorVisits, "illness")
+calculate_percentage_counts(DoctorVisits, "freepoor")
+calculate_percentage_counts(DoctorVisits, "freerepat")
+calculate_percentage_counts(DoctorVisits, "nchronic")
+calculate_percentage_counts(DoctorVisits, "lchronic")
+calculate_percentage_counts(DoctorVisits, "reduced")
+
+
+```
+
+```{r}
+library(ggplot2)
+library(ggplot2)
+
+create_pretty_histograms <- function(data) {
+  # Get the names of quantitative variables
+  quantitative_vars <- sapply(data, is.numeric)
+  quantitative_vars <- names(quantitative_vars[quantitative_vars])
+
+  # Create a list to store the plots
+  plots_list <- list()
+
+  # Generate a histogram for each quantitative variable
+  for (var in quantitative_vars) {
+    # Determine the number of bins using Scott's Rule
+    bins <- nclass.scott(data[[var]])
+
+    plot <- ggplot(data, aes(x = !!sym(var))) +
+      geom_histogram(fill = "skyblue", color = "white", bins = bins, position = "identity") +
+      labs(title = paste("Histogram of", var),
+           x = var,
+           y = "Frequency") +
+      theme_minimal()
+
+    plots_list[[var]] <- plot
+  }
+
+  return(plots_list)
+}
+
+# Example usage:
+# Assuming 'your_data' is your data frame
+histograms_list <- create_pretty_histograms(DoctorVisits)
+
+# Plot each histogram
+for (var in names(histograms_list)) {
+  print(histograms_list[[var]])
+}
+
+
+```
+
+
+```{r}
+library(dplyr)
+```
+
+
+```{r}
+str(DoctorVisits)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+logmean_plot <- function(data, bin_method, x, y, grouping = NULL, reg_formula = y ~ x) {
+  num_bins <- ceiling(1 + log2(nrow(data)))
+
+  if (is.null(grouping)) {
+    dat <- data.frame(x = data[, x], 
+                      y = data[, y],
+                      group = 1)
+  } else {
+    dat <- data.frame(x = data[, x], 
+                      y = data[, y],
+                      group = data[, grouping])
+  }
+  
+  if (bin_method == "equal_size") {
+    log_table <- dat %>%
+      na.omit() %>%
+      arrange(group, x) %>%
+      group_by(group) %>%
+      mutate(obs = y,
+             bin = rep(1:num_bins,
+                       each = ceiling(n() / num_bins))[1:n()]) %>%
+      group_by(bin, group) %>%
+      summarize(mean_x = mean(x),
+                mean_y = mean(obs),
+                num_obs = n()) %>%
+      ungroup() %>%
+      mutate(log_mean = log(mean_y))
+  } else {
+    log_table <- dat %>%
+      na.omit() %>%
+      group_by(group) %>%
+      mutate(obs = y,
+             bin = cut(x, 
+                       breaks = num_bins,
+                       labels = FALSE)) %>%
+      group_by(bin, group) %>%
+      summarize(mean_x = mean(x),
+                mean_y = mean(obs),
+                num_obs = n()) %>%
+      ungroup() %>%
+      mutate(log_mean = log(mean_y))
+  }
+  
+  if (is.null(grouping)) {
+    log_table %>%
+      ggplot(aes(x = mean_x,
+                 y = log_mean)) +
+      geom_point(size = 2.5) +
+      geom_smooth(se = FALSE, method = "lm", formula = reg_formula) +
+      theme_bw() +
+      labs(x = x,
+           y = "Empirical log mean count") +
+      theme(text = element_text(size = 25))
+  } else {
+    log_table %>%
+      ggplot(aes(x = mean_x,
+                 y = log_mean,
+                 color = group,
+                 shape = group)) +
+      geom_point(size = 2.5) +
+      geom_smooth(se = FALSE, method = "lm", formula = reg_formula) +
+      theme_bw() +
+      labs(x = x,
+           y = "Empirical log mean count",
+           color = grouping,
+           shape = grouping) +
+      theme(text = element_text(size = 25))
+  }
+}
+
+# Assuming DoctorVisits is your data frame
+logmean_plot(DoctorVisits, "equal_size", "age", "visits")
+logmean_plot(DoctorVisits, "equal_size", "income", "visits")
+logmean_plot(DoctorVisits, "equal_size", "illness", "visits")
+logmean_plot(DoctorVisits, "equal_size", "reduced", "visits")
+logmean_plot(DoctorVisits, "equal_size", "health", "visits")
+
+str(DoctorVisits)
+
+hist(DoctorVisits$income)
+
+```
+
+
+## Fitting the model
+
+```{r}
+
+neg_binom_model <- glm.nb(visits ~ gender + age + income + illness + reduced + health +
+                            private + freepoor + freerepat + nchronic + lchronic,
+                          data = DoctorVisits)
+```
+
+
+
+## Diagnosistics: Part 1 Zero Inflation
+```{r}
+library(countreg)
+
+rootogram(neg_binom_model)
+```
+
+## Diagnostics: Part 2 
+```{r}
+
+library(MASS)
+library(statmod)
+library(tidyverse)
+
+
+
+data.frame(x = DoctorVisits$age, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "age", y = "Quantile residuals",
+       title = "Quantile Residual Plot of Age") +
+  theme_bw()
+
+data.frame(x = DoctorVisits$income, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "income", y = "Quantile residuals",
+       title = "Quantile Residual Plot of income") +
+  theme_bw()
+
+data.frame(x = DoctorVisits$illness, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "illness", y = "Quantile residuals",
+       title = "Quantile Residual Plot of illness") +
+  theme_bw()
+
+data.frame(x = DoctorVisits$reduced, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "reduced", y = "Quantile residuals",
+       title = "Quantile Residual Plot of reduced") +
+  theme_bw()
+
+data.frame(x = DoctorVisits$health, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() 
+  geom_smooth() +
+  labs(x = "health", y = "Quantile residuals",
+       title = "Quantile Residual Plot of health") +
+  theme_bw()
+
+
+```
+
+
+No evidence of Zero Inflation or Over Dispersion
+
+
+```{r}
+DoctorVisits <- DoctorVisits %>%
+  mutate(
+    log_age = log(age),
+    sqrt_income = sqrt(income)
+    # Other transformations can be added here if needed
+  )
+
+# Fit the negative binomial model with transformed predictors
+neg_binom_model_2 <- glm.nb(visits ~ gender + log_age + sqrt_income + illness + reduced + log(health+2) +
+                            private + freepoor + freerepat + nchronic + lchronic,
+                          data = DoctorVisits)
+
+
+```
+
+
+```{r}
+
+data.frame(x = DoctorVisits$log_age, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Logged age", y = "Quantile residuals",
+       title = "Quantile Residual Plot of Logged Age") +
+  theme_bw()
+
+data.frame(x = DoctorVisits$sqrt_income, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "sqrted income", y = "Quantile residuals",
+       title = "Quantile Residual Plot of Sqrted income") +
+  theme_bw()
+
+data.frame(x = DoctorVisits$illness, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "illness", y = "Quantile residuals",
+       title = "Quantile Residual Plot of illness") +
+  theme_bw()
+
+data.frame(x = DoctorVisits$reduced, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "reduced", y = "Quantile residuals",
+       title = "Quantile Residual Plot of reduced") +
+  theme_bw()
+
+data.frame(x = DoctorVisits$health, resids = qresid(neg_binom_model)) %>%
+  ggplot(aes(x = x, y = resids)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Logged health", y = "Quantile residuals",
+       title = "Quantile Residual Plot of health") +
+  theme_bw()
+
+```
+
